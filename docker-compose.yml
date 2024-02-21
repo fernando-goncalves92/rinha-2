@@ -1,0 +1,66 @@
+version: "3.5"
+
+services:  
+  sqlserver:    
+    container_name: sqlserver
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      SA_PASSWORD: "Rinha@123"
+      ACCEPT_EULA: "Y"
+      MSSQL_PID: "Developer"
+    ports:
+      - "1433:1433"
+    # deploy:
+      # resources:
+        # limits:
+          # cpus: '0.5'
+          # memory: '300MB'
+      
+  mssqltools:
+    container_name: mssqltools
+    image: mcr.microsoft.com/mssql-tools
+    depends_on:
+      - sqlserver
+    volumes:
+      - ./config/setup.sql:/tmp/setup.sql
+      - ./config/init.sh:/tmp/init.sh
+    command: /bin/bash ./tmp/init.sh
+
+  api01: &api
+    container_name: api01
+    image: ferhgm/api-rinha-2
+    hostname: api01
+    environment:
+      - ASPNETCORE_URLS=http://*:80
+    depends_on:
+      - sqlserver
+    #deploy:
+    #  resources:
+    #    limits:
+    #      cpus: '0.5'
+    #      memory: '100MB'
+  api02:
+    <<: *api 
+    container_name: api02
+    hostname: api02
+ 
+  nginx:
+    container_name: nginx
+    image: nginx:latest
+    volumes:
+      - ./config/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - api01
+      - api02
+    ports:        
+      - "9999:9999" 
+    #deploy:
+    #  resources:
+    #    limits:
+    #      cpus: '0.4'
+    #      memory: '90MB'
+
+networks:
+  default:
+    driver: bridge
+    name: rinha-network
