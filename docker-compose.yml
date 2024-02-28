@@ -1,31 +1,25 @@
 version: "3.5"
 
-services:  
-  sqlserver:    
-    container_name: sqlserver
-    image: mcr.microsoft.com/mssql/server:2022-latest
+services:
+  db:
+    container_name: db
+    image: postgres:latest
+    hostname: db
     environment:
-      SA_PASSWORD: "Rinha@123"
-      ACCEPT_EULA: "Y"
-      MSSQL_PID: "Developer"
+      - POSTGRES_PASSWORD=123
+      - POSTGRES_USER=admin
+      - POSTGRES_DB=rinha
     ports:
-      - "1433:1433"
-    # deploy:
-      # resources:
-        # limits:
-          # cpus: '0.5'
-          # memory: '300MB'
-      
-  mssqltools:
-    container_name: mssqltools
-    image: mcr.microsoft.com/mssql-tools
-    depends_on:
-      - sqlserver
+      - "5432:5432"
     volumes:
-      - ./config/setup.sql:/tmp/setup.sql
-      - ./config/init.sh:/tmp/init.sh
-    command: /bin/bash ./tmp/init.sh
-
+      - ./config/setup.sql:/docker-entrypoint-initdb.d/setup.sql
+    command: postgres -c checkpoint_timeout=600 -c max_wal_size=4096 -c synchronous_commit=0 -c fsync=0 -c full_page_writes=0
+    deploy:
+      resources:
+        limits:
+          cpus: "0.3"
+          memory: "256MB"
+          
   api01: &api
     container_name: api01
     image: ferhgm/api-rinha-2
@@ -33,12 +27,12 @@ services:
     environment:
       - ASPNETCORE_URLS=http://*:80
     depends_on:
-      - sqlserver
-    #deploy:
-    #  resources:
-    #    limits:
-    #      cpus: '0.5'
-    #      memory: '100MB'
+      - db
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: '130MB'
   api02:
     <<: *api 
     container_name: api02
@@ -54,11 +48,11 @@ services:
       - api02
     ports:        
       - "9999:9999" 
-    #deploy:
-    #  resources:
-    #    limits:
-    #      cpus: '0.4'
-    #      memory: '90MB'
+    deploy:
+      resources:
+        limits:
+          cpus: '0.2'
+          memory: '30MB'
 
 networks:
   default:

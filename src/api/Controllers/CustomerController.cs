@@ -1,4 +1,3 @@
-using System.Transactions;
 using Api.Models;
 using Domain;
 using Infrastructure;
@@ -9,15 +8,11 @@ namespace Api.Controllers;
 [ApiController]
 public class CustomerController : ControllerBase
 {
-    private readonly CustomerRepository _customerRepository;
-    private readonly BalanceRepository _balanceRepository;
-    private readonly TransactionRepository _transactionRepository;
+    private readonly Uow _uow;
 
-    public CustomerController(CustomerRepository customerRepository, BalanceRepository balanceRepository, TransactionRepository transactionRepository)
+    public CustomerController(Uow uow)
     {
-        _customerRepository = customerRepository;
-        _balanceRepository = balanceRepository;
-        _transactionRepository = transactionRepository;
+        _uow = uow;
     }
 
     [HttpPost("clientes/{id:int}/transacoes")]
@@ -29,64 +24,79 @@ public class CustomerController : ControllerBase
             return StatusCode(StatusCodes.Status422UnprocessableEntity);
         if (string.IsNullOrWhiteSpace(request.Description) || request.Description.Length > 10)
             return StatusCode(StatusCodes.Status422UnprocessableEntity);
-        
-        var customerResult = _customerRepository.GetById(id);
-        if (customerResult.IsFailed)
-            return StatusCode(StatusCodes.Status500InternalServerError, customerResult.Errors);
-        if (customerResult.Value is null)
-            return NotFound("Customer not found");
 
-        using var transactionScope = new TransactionScope(TransactionScopeAsyncFlowOption.Enabled);
+        try
+        {
+            await _uow.OpenConnectionWithTransactionAsync();
             
-        var balanceResult = await _balanceRepository.GetByCustomerId(id, cancellationToken);
-        if (balanceResult.IsFailed)
-            return StatusCode(StatusCodes.Status500InternalServerError, balanceResult.Errors);
+            var customerResult = _uow.CustomerRepository.GetById(id);
+            if (customerResult.IsFailed)
+                return StatusCode(StatusCodes.Status500InternalServerError, customerResult.Errors);
+            if (customerResult.Value is null)
+                return NotFound("Customer not found");
 
-        if (transactionType == TransactionType.D &&
-            balanceResult.Value.Amount - amount < -customerResult.Value.Limit)
-            return StatusCode(StatusCodes.Status422UnprocessableEntity);
+            var lockResult = await _uow.BalanceRepository.LockTableInExclusiveMode(cancellationToken);
+            if (lockResult.IsFailed)
+                return StatusCode(StatusCodes.Status500InternalServerError, lockResult.Errors);
             
-        var transaction = Domain.Transaction.From(id, amount, transactionType, request.Description);
-        var transactionResult = await _transactionRepository.Add(transaction, cancellationToken);
-        if (transactionResult.IsFailed)
-            return StatusCode(StatusCodes.Status500InternalServerError, transactionResult.Errors);
-            
-        var newBalanceAmount = transactionType == TransactionType.D
-            ? balanceResult.Value.Amount - amount
-            : balanceResult.Value.Amount + amount;
+            var balanceResult = await _uow.BalanceRepository.GetByCustomerId(id, cancellationToken);
+            if (balanceResult.IsFailed)
+                return StatusCode(StatusCodes.Status500InternalServerError, balanceResult.Errors);
+
+            if (transactionType == TransactionType.D &&
+                balanceResult.Value.Amount - amount < -customerResult.Value.Limit)
+                return StatusCode(StatusCodes.Status422UnprocessableEntity);
+
+            var transaction = Transaction.From(id, amount, transactionType, request.Description);
+            var transactionResult = await _uow.TransactionRepository.Add(transaction, cancellationToken);
+            if (transactionResult.IsFailed)
+                return StatusCode(StatusCodes.Status500InternalServerError, transactionResult.Errors);
+
+            var newBalanceAmount = transactionType == TransactionType.D
+                ? balanceResult.Value.Amount - amount
+                : balanceResult.Value.Amount + amount;
+
+            var updatedBalance = Balance.From(balanceResult.Value.Id, id, newBalanceAmount);
+            var newBalanceResult = await _uow.BalanceRepository.Update(updatedBalance, cancellationToken);
+            if (newBalanceResult.IsFailed)
+                return StatusCode(StatusCodes.Status500InternalServerError, newBalanceResult.Errors);
         
-        var updatedBalance = Balance.From(balanceResult.Value.Id, id, newBalanceAmount);
-        var newBalanceResult = await _balanceRepository.Update(updatedBalance, cancellationToken);
-        if (newBalanceResult.IsFailed)
-            return StatusCode(StatusCodes.Status500InternalServerError, newBalanceResult.Errors);
-        
-        transactionScope.Complete();
+            await _uow.Commit();
             
-        return Ok
-        (
-            new
-            {
-                limite = customerResult.Value.Limit,
-                saldo =  updatedBalance.Amount
-            }
-        );
+            return Ok
+            (
+                new
+                {
+                    limite = customerResult.Value.Limit,
+                    saldo = updatedBalance.Amount
+                }
+            );
+        }
+        catch (Exception error)
+        {
+            await _uow.Rollback();
+            
+            return StatusCode(StatusCodes.Status500InternalServerError, error);
+        }
     }
 
     [HttpGet("clientes/{id:int}/extrato")]
     public async Task<ActionResult> GetExtract(int id, CancellationToken cancellationToken)
     {
-        var customerResult = _customerRepository.GetById(id);
+        await _uow.OpenConnection();
+        
+        var customerResult = _uow.CustomerRepository.GetById(id);
         if (customerResult.Value is null)
             return NotFound("Customer not found");
-    
-        var transactionResult = await _transactionRepository.GetLast10(id, cancellationToken);
+
+        var transactionResult = await _uow.TransactionRepository.GetLast10(id, cancellationToken);
         if (transactionResult.IsFailed)
             return StatusCode(StatusCodes.Status500InternalServerError, transactionResult.Errors);
-            
-        var balanceResult = await _balanceRepository.GetByCustomerId(id, cancellationToken);
+        
+        var balanceResult = await _uow.BalanceRepository.GetByCustomerId(id, cancellationToken);
         if (balanceResult.IsFailed)
             return StatusCode(StatusCodes.Status500InternalServerError, balanceResult.Errors);
-            
+        
         return Ok
         (
             new

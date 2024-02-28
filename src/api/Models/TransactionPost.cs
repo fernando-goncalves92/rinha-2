@@ -2,7 +2,7 @@
 
 namespace Api.Models;
 
-public class TransactionPost
+public record TransactionPost
 {
     [JsonPropertyName("valor")] 
     public object Amount { get; set; }

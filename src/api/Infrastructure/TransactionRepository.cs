@@ -1,17 +1,18 @@
 ﻿using System.Collections.Immutable;
 using Domain;
-using System.Data.SqlClient;
 using FluentResults;
+using Npgsql;
 
 namespace Infrastructure;
 
 public class TransactionRepository
 {
-    private readonly string _connectionString;
+    // managed by uow, doesn't need to be disposed here
+    private readonly NpgsqlConnection _conn;
     
-    public TransactionRepository(string connectionString)
+    public TransactionRepository(NpgsqlConnection conn)
     {
-        _connectionString = connectionString;
+        _conn = conn;
     }
     
     public async Task<Result> Add(Transaction transaction, CancellationToken cancellationToken)
@@ -19,7 +20,7 @@ public class TransactionRepository
         try
         {
             var sql = @"
-                      insert into [transaction]
+                      insert into transaction
                       (
                          customerId
                         ,amount
@@ -29,24 +30,22 @@ public class TransactionRepository
                       )
                       values
                       (
-                         @customerId
-                        ,@amount
-                        ,@transactionType
-                        ,@description
-                        ,@createdAt
+                         $1
+                        ,$2
+                        ,$3
+                        ,$4
+                        ,$5
                       )
                       ";
 
-            await using var con = new SqlConnection(_connectionString);
-            await using var command = con.CreateCommand();
+            await using var command = _conn.CreateCommand();
             command.CommandText = sql;
-            command.Parameters.AddWithValue("@customerId", transaction.CustomerId);
-            command.Parameters.AddWithValue("@amount", transaction.Amount);
-            command.Parameters.AddWithValue("@transactionType", transaction.TransactionType.GetLowerName());
-            command.Parameters.AddWithValue("@description", transaction.Description);
-            command.Parameters.AddWithValue("@createdAt", transaction.CreatedAt);
+            command.Parameters.AddWithValue(transaction.CustomerId);
+            command.Parameters.AddWithValue(transaction.Amount);
+            command.Parameters.AddWithValue(transaction.TransactionType.GetLowerName());
+            command.Parameters.AddWithValue(transaction.Description);
+            command.Parameters.AddWithValue(transaction.CreatedAt);
 
-            await con.OpenAsync(cancellationToken).ConfigureAwait(false);
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
 
             return Result.Ok();
@@ -66,7 +65,7 @@ public class TransactionRepository
         try
         {
             var sql = @"
-                      select top 10
+                      select
                          id
                         ,customerId
                         ,amount
@@ -74,23 +73,21 @@ public class TransactionRepository
                         ,description
                         ,createdAt
                       from
-                         [transaction]
+                         transaction
                       where
-                          customerId = @customerId
+                          customerId = $1
                       order by 
                           createdAt desc
+                      limit 10
                       ";
 
-            await using var con = new SqlConnection(_connectionString);
-            await using var command = con.CreateCommand();
+            await using var command = _conn.CreateCommand();
             command.CommandText = sql;
-            command.Parameters.AddWithValue("@customerId", customerId);
-
-            await con.OpenAsync(cancellationToken).ConfigureAwait(false);
+            command.Parameters.AddWithValue(customerId);
             
             var transactions = new List<Transaction>();
             await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-            while (await reader.ReadAsync(cancellationToken))
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
             {
                 var id = reader.GetInt32(reader.GetOrdinal("id"));
                 var amount = reader.GetInt32(reader.GetOrdinal("amount"));
