@@ -1,4 +1,4 @@
-# 2° edição da rinha de backend - Controle de Concorrência
+# [2° edição da rinha de backend - Controle de Concorrência](https://github.com/zanfranceschi/rinha-de-backend-2024-q1)
 
 <img src="https://upload.wikimedia.org/wikipedia/commons/c/c5/Nginx_logo.svg" alt="logo nginx" width="300" height="auto">
 <br/>
@@ -9,5 +9,3 @@
 - `nginx` 
 - `postgres`
 - `dotnet 6.0`
-
-[Repositório da 2° edição da rinha de backend](https://github.com/zanfranceschi/rinha-de-backend-2024-q1)
