@@ -2,56 +2,34 @@
 
 namespace Infrastructure;
 
-public class Uow : IAsyncDisposable
+public class Uow : IDisposable, IAsyncDisposable
 {
-    private readonly NpgsqlDataSource _dataSource;
+    private readonly NpgsqlConnection _connection;
     
-    private BalanceRepository _balanceRepository;
-    private CustomerRepository _customerRepository;
-    private TransactionRepository _transactionRepository;
-    private NpgsqlConnection _connection;
-    private NpgsqlTransaction _transaction;
-    
-    public Uow(NpgsqlDataSource dataSource)
+    public Uow(string connectionString)
     {
-        _dataSource = dataSource;
+        _connection = new NpgsqlConnection(connectionString);
+        BalanceRepository = new BalanceRepository(_connection);
+        CustomerRepository = new CustomerRepository();
+        TransactionRepository = new TransactionRepository(_connection);
     }
 
-    public BalanceRepository BalanceRepository => _balanceRepository ??= new BalanceRepository(_connection);
-    public CustomerRepository CustomerRepository => _customerRepository ??= new CustomerRepository();
-    public TransactionRepository TransactionRepository => _transactionRepository ??= new TransactionRepository(_connection);
-
-    public async Task OpenConnectionWithTransactionAsync()
+    public BalanceRepository BalanceRepository { get; }
+    public CustomerRepository CustomerRepository { get; }
+    public TransactionRepository TransactionRepository { get; }
+   
+    public Task OpenConnection(CancellationToken cancellationToken)
     {
-        _connection = _dataSource.CreateConnection();
-        
-        await _connection.OpenAsync().ConfigureAwait(false);
-        
-        _transaction = await _connection.BeginTransactionAsync();
+        return _connection.OpenAsync(cancellationToken);
     }
     
-    public Task OpenConnection()
+    public void Dispose()
     {
-        _connection = _dataSource.CreateConnection();
-        
-        return _connection.OpenAsync();
-    }
-
-    public Task Commit()
-    {
-        return _transaction.CommitAsync();
-    }
-    
-    public Task Rollback()
-    {
-        return _transaction.RollbackAsync();
+        if (_connection != null) _connection.Dispose();
     }
 
     public async ValueTask DisposeAsync()
     {
-        if (_transaction != null) 
-            await _transaction.DisposeAsync().ConfigureAwait(false);
-
-        await _connection.DisposeAsync().ConfigureAwait(false);
+        if (_connection != null) await _connection.DisposeAsync().ConfigureAwait(false);
     }
 }

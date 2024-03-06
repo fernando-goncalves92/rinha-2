@@ -8,7 +8,7 @@ public enum TransactionType
 
 public static class TransactionTypeExtensions
 {
-    public static string GetLowerName(this TransactionType transactionType)
+    public static string ToLowerName(this TransactionType transactionType)
     {
         return transactionType.ToString().ToLower();
     }
