@@ -94,9 +94,9 @@ public class TransactionRepository
                 error = reader.GetBoolean(reader.GetOrdinal("has_error"));
             }
 
-            var balance = Balance.From(idBalance, customer.Id, newBalance);
-            
-            return error ? Result.Fail("Invalid Transaction") : Result.Ok(balance);
+            return error 
+                ? Result.Fail("Invalid Transaction") 
+                : Result.Ok(Balance.From(idBalance, customer.Id, newBalance));
         }
         catch (Exception e)
         {

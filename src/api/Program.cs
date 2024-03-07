@@ -82,15 +82,14 @@ app.MapPost("clientes/{id:int}/transacoes", async (
         await uow.OpenConnection(cancellationToken);
         
         var customerResult = uow.CustomerRepository.GetById(id);
-        if (customerResult.IsFailed)
-            return Results.StatusCode(StatusCodes.Status500InternalServerError);
         if (customerResult.Value is null)
             return Results.NotFound("Customer not found");
         
         var transaction = Transaction.From(id, amount, transactionType, request.Description);
         var transactionResult = await uow.TransactionRepository.AddTransactionAndUpdateBalance(
             customerResult.Value,
-            transaction, cancellationToken);
+            transaction, 
+            cancellationToken);
         if (transactionResult.IsFailed)
             return Results.StatusCode(StatusCodes.Status422UnprocessableEntity);
 
