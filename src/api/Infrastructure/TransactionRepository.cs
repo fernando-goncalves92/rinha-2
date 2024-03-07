@@ -7,19 +7,18 @@ namespace Infrastructure;
 
 public class TransactionRepository
 {
-    // managed by uow
-    private readonly NpgsqlConnection _conn;
+    private readonly string _connectionString;
     
-    public TransactionRepository(NpgsqlConnection conn)
+    public TransactionRepository(string connectionString)
     {
-        _conn = conn;
+        _connectionString = connectionString;
     }
     
     public async Task<Result<ImmutableList<Transaction>>> GetLast10(int customerId, CancellationToken cancellationToken)
     {
         try
         {
-            var sql = @"
+            const string sql = @"
                       select
                          id
                         ,customerId
@@ -36,9 +35,12 @@ public class TransactionRepository
                       limit 10
                       ";
 
-            await using var command = _conn.CreateCommand();
+            await using var connection = new NpgsqlConnection(_connectionString);
+            await using var command = connection.CreateCommand();
             command.CommandText = sql;
             command.Parameters.AddWithValue(customerId);
+
+            await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
             
             var transactions = new List<Transaction>();
             await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
@@ -72,10 +74,9 @@ public class TransactionRepository
     {
         try
         {
-            var sql = "select id_balance, new_balance, has_error from AddTransaction($1, $2, $3, $4, $5)";
-
-            await using var command = _conn.CreateCommand();
-            command.CommandText = sql;
+            await using var connection = new NpgsqlConnection(_connectionString);
+            await using var command = connection.CreateCommand();
+            command.CommandText = "select id_balance, new_balance, has_error from AddTransaction($1, $2, $3, $4, $5)";
             command.Parameters.AddWithValue(customer.Id);
             command.Parameters.AddWithValue(customer.Limit);
             command.Parameters.AddWithValue(transaction.TransactionType.ToLowerName());
@@ -85,6 +86,8 @@ public class TransactionRepository
             var idBalance = 0;
             var newBalance = 0;
             var error = false;
+
+            await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
             
             await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
             while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))

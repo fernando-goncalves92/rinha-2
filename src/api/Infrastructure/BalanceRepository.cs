@@ -6,24 +6,24 @@ namespace Infrastructure;
 
 public class BalanceRepository
 {
-    // managed by uow
-    private readonly NpgsqlConnection _conn;
+    private readonly string _connectionString;
     
-    public BalanceRepository(NpgsqlConnection conn)
+    public BalanceRepository(string connectionString)
     {
-        _conn = conn;
+        _connectionString = connectionString;
     }
     
     public async Task<Result<Balance>> GetByCustomerId(int customerId, CancellationToken cancellationToken)
     {
         try
         {
-            var sql = "select id, customerId, amount, updatedAt from balance where customerId = $1;";
-            
-            await using var command = _conn.CreateCommand();
-            command.CommandText = sql;
+            await using var connection = new NpgsqlConnection(_connectionString);
+            await using var command = connection.CreateCommand();
+            command.CommandText = "select id, customerId, amount, updatedAt from balance where customerId = $1;";
             command.Parameters.AddWithValue(customerId);
 
+            await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+            
             Balance balance = null;
             await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
             while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
