@@ -3,4 +3,4 @@
 ## Tecnologias 
 - `nginx` 
 - `postgres`
-- `dotnet 6.0`
+- `dotnet 8.0`
